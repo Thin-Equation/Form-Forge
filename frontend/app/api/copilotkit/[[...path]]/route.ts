@@ -47,6 +47,7 @@ const copilotRuntime = new CopilotRuntime({
 const handler = createCopilotRuntimeHandler({
   runtime: copilotRuntime,
   basePath: "/api/copilotkit",
+  mode: "single-route",
   cors: true,
 });
 

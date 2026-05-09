@@ -1,126 +1,171 @@
-# A2UI Track 1 Design — Quote-to-Cash Hero Flow
+# A2UI Generative UI — Backend Design (current as of 2026-05-09)
 
-## Problem and Goal
-Build a hackathon-ready generative UI prototype for **Track 1 (Kill the Dashboard)** using **A2UI**.  
-The demo must prove that an agent can generate the right interface at runtime, replacing static module dashboards.
+## What We're Building
 
-Primary success criterion: **clear runtime-generated UI transitions** across the flow.
+A backend data service for a multi-tenant generative-UI platform where:
+- Companies configure their own **workflows** (step sequences) and **forms** (field definitions) at signup.
+- All users of the same company share the same deterministic flow state.
+- A CopilotKit + Gemini frontend renders the right UI at runtime based on what the backend serves — no hardcoded screens.
 
-## Scope (In)
-- Single hero workflow: **Lead -> Estimate -> Invoice**
-- Domain focus for MVP persistence: **lead, estimate, invoice**
-- Runtime-generated components via A2UI payloads
-- Interactive inline estimate editing
-- Final invoice approve/send as **simulated send** (status update + toast)
-
-## Scope (Out)
-- Full ERP module buildout (HR, dispatch suite, full accounting suite)
-- Real email/API invoice sending
-- Multi-tenant auth hardening
-- Broad schema coverage beyond hero flow entities
-
-## Chosen Approach
-**Deterministic A2UI State Machine** (recommended and selected).
-
-Why:
-- Fastest to ship inside six-hour constraints
-- Lowest runtime failure risk for live demo
-- Clear architecture story for judges
-
-Trade-off:
-- Less open-ended than fully LLM-driven dynamic planning, but much more reliable.
+---
 
 ## Architecture
-### Frontend
-- **Next.js + Tailwind + Framer Motion**
-- Sends user prompts to backend `/chat`
-- Subscribes to backend SSE endpoint `/stream/{session_id}`
-- Renders A2UI payloads through a strict component registry
 
-### Backend
-- **FastAPI** as agent gateway and flow orchestrator
-- Deterministic `FlowEngine` for `lead -> estimate -> invoice`
-- Callback endpoint `/actions` for UI interactions (estimate edits, final approve/send)
-- **Supabase Postgres** persistence for only lead/estimate/invoice entities
+```
+Browser
+  ↕  (CopilotKit React hooks)
+Next.js  ← CopilotRuntime + Gemini (LLM lives here)
+  ↕  HTTP
+FastAPI  ← this repo (pure data service, no LLM)
+  ↕
+Supabase Postgres
+```
 
-### Protocol contract
-Single A2UI payload shape:
+The LLM (Gemini) and AG-UI streaming live entirely in Next.js/CopilotKit.
+FastAPI owns persistence, workflow config, and business-logic actions only.
+
+---
+
+## Database Schema (Supabase)
+
+### `company_workflows`  PK `(company_id, workflow_id)`
+Stores workflow configs as JSONB. One company can have many workflows.
+
+### `company_flows`  PK `(company_id, workflow_id)`
+Current active flow state per company+workflow. All users of the same company
+see the same row — this is the shared deterministic state.
+
+### `form_submissions`  PK `id` (BIGSERIAL)
+Immutable append-only records written whenever a user finalises a step.
+Powers the dynamic dashboard without extra persistence.
+
+### `idempotency_keys`  PK `(invoice_id, key)`
+Prevents duplicate approve-and-send operations.
+
+---
+
+## Workflow & Form Schema
 
 ```json
 {
-  "type": "a2ui_render",
-  "component": "EditableEstimate",
-  "props": {},
-  "meta": {
-    "session_id": "string",
-    "correlation_id": "string",
-    "step": "lead|estimate|invoice"
-  }
+  "workflow_id": "field-service-v1",
+  "name": "Field Service",
+  "steps": [
+    {
+      "id": "lead",
+      "name": "Lead Review",
+      "component": "LeadCard",
+      "description": "Show lead or prospect info",
+      "transitions": ["survey"],
+      "fields": [
+        { "key": "customer",  "label": "Customer Name", "type": "text",   "required": true },
+        { "key": "deal_size", "label": "Deal Size ($)", "type": "number", "required": true }
+      ]
+    },
+    {
+      "id": "survey",
+      "name": "Site Survey",
+      "component": "SiteSurveyForm",
+      "description": "Record site survey results",
+      "transitions": ["estimate"],
+      "fields": [
+        { "key": "location", "label": "Site Address", "type": "text",     "required": true },
+        { "key": "notes",    "label": "Notes",        "type": "textarea"                   }
+      ]
+    }
+  ]
 }
 ```
 
-## Component and Service Boundaries
-### Frontend units
-1. `DynamicRenderer` — maps payload `component` to React component
-2. `LeadCard` — shows lead/account context
-3. `EditableEstimate` — editable line-item table with computed totals
-4. `InvoiceAction` — approval/send surface
-5. `EventTimeline` — lightweight stream/debug panel for demo narration
+**Supported field types:** `text`, `number`, `select`, `date`, `textarea`, `checkbox`
 
-### Backend units
-1. `SessionController` — prompt/session lifecycle handling
-2. `FlowEngine` — deterministic state transitions
-3. `PayloadBuilder` — schema-safe payload creation
-4. `ActionHandler` — handles estimate edit and approve/send callbacks
-5. `Repo` — Supabase CRUD for lead/estimate/invoice
+The `description` on each step is injected into the Gemini system prompt so the
+LLM knows which render function to call and what props to pre-fill.
 
-## End-to-End Data Flow
-1. User prompt: "Pull up Acme lead and draft estimate."
-2. `/chat` creates/updates session and triggers `FlowEngine`.
-3. Engine loads lead, creates draft estimate totals, persists draft.
-4. SSE emits `LeadCard` render payload.
-5. SSE emits `EditableEstimate` render payload.
-6. User edits qty/rate inline.
-7. Frontend posts edit event to `/actions/estimate-update`.
-8. Backend recomputes totals, persists, and emits refreshed `EditableEstimate`.
-9. User prompt: "Lock contract and generate invoice."
-10. Engine creates invoice record and emits `InvoiceAction`.
-11. User clicks approve/send.
-12. Backend simulates send, updates invoice status, emits success event + toast payload.
+---
 
-## Error Handling and Reliability
-- Validate every outbound A2UI payload against schema before SSE emit.
-- Unknown `component` must render a visible fallback error card with correlation ID.
-- Supabase write/read failures surface as actionable inline retry plus toast.
-- Final approve/send uses idempotency key to prevent duplicate simulated sends.
-- SSE reconnect path recovers visible state after transient disconnect.
+## API Reference
 
-## Testing and Demo Readiness
-### Backend tests
-- Payload contract tests (required fields/types)
-- Flow transition tests (`lead -> estimate -> invoice`)
-- Action handler tests for recompute + persistence
+### Onboarding
 
-### Frontend tests
-- Renderer behavior for known and unknown components
-- Edit callback wiring from `EditableEstimate`
-- Final action wiring from `InvoiceAction`
+| Method | Path | Description |
+|--------|------|-------------|
+| GET  | `/company/{id}/status` | `is_onboarded` flag + workflow list. Frontend routing gate on every load. |
+| POST | `/company/{id}/onboard` | Save first workflow + initialise flow to step[0]. Called once on signup completion. |
 
-### Integration/demo checks
-- Seed Acme lead once
-- Run one scripted happy-path from prompt to send simulation
-- Verify visible runtime transitions at each major step
+### Workflow CRUD
 
-## Demo Script (Judging-Focused)
-1. Prompt 1: pull Acme lead + draft estimate -> two generated UI surfaces appear.
-2. Edit labor/material rows inline -> totals update in-place and rerender.
-3. Prompt 2: lock contract + generate invoice -> invoice action card appears.
-4. Approve/send -> success confirmation and status transition.
+| Method | Path | Description |
+|--------|------|-------------|
+| GET    | `/workflow/{company_id}` | List all workflows (summary — id, name, step_count, current_step) |
+| POST   | `/workflow/{company_id}` | Create new workflow (409 if workflow_id already exists) |
+| GET    | `/workflow/{company_id}/{workflow_id}` | Full workflow detail |
+| PUT    | `/workflow/{company_id}/{workflow_id}` | Full replace |
+| DELETE | `/workflow/{company_id}/{workflow_id}` | Delete workflow + its flow state |
+| GET    | `/workflow/{company_id}/{workflow_id}/system-prompt` | LLM-ready description string for CopilotKit |
 
-This script demonstrates that the user does not navigate prebuilt dashboards; the agent renders the exact UI needed at runtime.
+### Flow State
 
-## Implementation Notes
-- Keep seed data small and deterministic for reliability.
-- Use Framer Motion transitions only at key state boundaries to avoid animation noise.
-- Favor explicit state enums over implicit text parsing for flow transitions.
-- Keep all non-hero modules out of MVP.
+| Method | Path | Description |
+|--------|------|-------------|
+| GET  | `/flow/{company_id}/{workflow_id}` | Current shared flow state |
+| POST | `/flow/{company_id}/{workflow_id}` | Upsert (step validated against workflow) |
+
+### Submissions (dashboard data)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/submissions/{company_id}/{workflow_id}` | Save a finalised step's form data |
+| GET  | `/submissions/{company_id}/{workflow_id}` | List all submissions, newest first |
+
+### Actions
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/actions/estimate-update` | Recompute line-item total, persist |
+| POST | `/actions/approve-send`    | Idempotent invoice send simulation |
+
+---
+
+## App Flow (Phase 1)
+
+### Signup (new company)
+1. Frontend calls `GET /company/{id}/status` → `{ is_onboarded: false }`
+2. Shows workflow builder + form builder UI
+3. User configures steps and form fields
+4. Frontend calls `POST /company/{id}/onboard` with the workflow
+5. Backend saves workflow + initialises flow state
+6. Frontend redirects to the active flow
+
+### Signin (returning company)
+1. Frontend calls `GET /company/{id}/status` → `{ is_onboarded: true, workflows: [...] }`
+2. Loads `GET /workflow/{id}/{wf_id}/system-prompt` → injects into Gemini
+3. Loads `GET /flow/{id}/{wf_id}` → shows current state immediately
+4. User continues from where the company left off
+
+### Workflow Management (post-onboarding)
+- Create additional workflows: `POST /workflow/{id}`
+- Edit existing: `PUT /workflow/{id}/{wf_id}`
+- Delete: `DELETE /workflow/{id}/{wf_id}`
+
+### Runtime (per user message)
+1. User sends message → CopilotKit calls Gemini with system prompt
+2. Gemini fires `render_<component>` tool call
+3. CopilotKit calls `POST /flow/{id}/{wf_id}` to persist new state
+4. All other company users see the update on their next `GET /flow`
+
+---
+
+## Phase 2 (if time permits)
+- Dynamic dashboard: frontend reads `GET /submissions/{id}/{wf_id}` and renders
+  charts/tables. No new backend work needed — the data is already persisted.
+
+---
+
+## Tech Stack
+- **Runtime:** FastAPI + Uvicorn, Python 3.12+
+- **Package manager:** uv
+- **Persistence:** Supabase Postgres (supabase-py)
+- **Validation:** Pydantic v2
+- **Tests:** pytest (41 tests, all passing)
+- **Env vars required:** `SUPABASE_URL`, `SUPABASE_KEY`
