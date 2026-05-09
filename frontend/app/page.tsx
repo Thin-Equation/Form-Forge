@@ -1,9 +1,8 @@
 "use client";
 
-import { CopilotChat } from "@copilotkit/react-core/v2";
 import { useSearchParams } from "next/navigation";
 import { Suspense } from "react";
-import { AgentRuntime } from "@/components/AgentRuntime";
+import { WorkflowSurface } from "@/components/WorkflowSurface";
 import { CompanyProvider, useCompany } from "@/lib/CompanyContext";
 import { DEMO_COMPANY_ID } from "@/lib/api";
 
@@ -18,8 +17,8 @@ function Header() {
         </h1>
         <p className="text-sm text-zinc-500 dark:text-zinc-400">
           {onboarded
-            ? "Ask the agent to pull a lead, draft an estimate, or generate an invoice."
-            : "Tell the agent about your process to set up your first workflow."}
+            ? "Edit any field directly. The agent reacts to your changes and to natural-language commands."
+            : "Describe your process in the bar below — the agent will build the workflow."}
         </p>
       </div>
       <div className="flex items-center gap-2 font-mono text-xs">
@@ -69,13 +68,7 @@ function Body() {
     );
   }
 
-  // Always render the chat — the agent handles both onboarding and active flow.
-  return (
-    <section className="flex-1 min-h-0">
-      <AgentRuntime />
-      <CopilotChat threadId={`quote-to-cash:${companyId}:v5`} />
-    </section>
-  );
+  return <WorkflowSurface />;
 }
 
 function Page() {
