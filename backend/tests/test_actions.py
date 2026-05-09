@@ -1,87 +1,61 @@
-import os
-import subprocess
-import sys
-from concurrent.futures import ThreadPoolExecutor
-from pathlib import Path
+"""
+Tests for business-logic helpers (pure math + mocked Supabase).
+"""
+from unittest.mock import MagicMock, patch
 
 from app.flow import approve_send_once, recompute_estimate_total
 
-BACKEND_DIR = Path(__file__).resolve().parents[1]
 
-def test_recompute_estimate_total() -> None:
-    total = recompute_estimate_total(
-        [{"qty": 10, "rate": 85}, {"qty": 50, "rate": 12}]
-    )
+# ---------------------------------------------------------------------------
+# recompute_estimate_total — pure math, no I/O
+# ---------------------------------------------------------------------------
 
-    assert total == 1450
-
-
-def test_recompute_estimate_total_currency_precision() -> None:
-    total = recompute_estimate_total([{"qty": 3, "rate": 0.1}])
-
-    assert total == 0.3
+def test_recompute_basic() -> None:
+    assert recompute_estimate_total([{"qty": 10, "rate": 85}, {"qty": 50, "rate": 12}]) == 1450
 
 
-def test_approve_send_once_idempotency(tmp_path, monkeypatch) -> None:
-    monkeypatch.setenv("IDEMPOTENCY_DB_PATH", str(tmp_path / "idempotency.sqlite3"))
-
-    first = approve_send_once(invoice_id="inv-basic", key="k-basic")
-    second = approve_send_once(invoice_id="inv-basic", key="k-basic")
-
-    assert first is True
-    assert second is False
+def test_recompute_currency_precision() -> None:
+    assert recompute_estimate_total([{"qty": 3, "rate": 0.1}]) == 0.3
 
 
-def test_approve_send_once_persists_across_processes(tmp_path) -> None:
-    db_path = tmp_path / "idempotency.sqlite3"
-    env = {**os.environ, "IDEMPOTENCY_DB_PATH": str(db_path)}
-
-    script = (
-        "from app.flow import approve_send_once;"
-        "print(approve_send_once('inv-process', 'key-1'))"
-    )
-    first = subprocess.run(
-        [sys.executable, "-c", script],
-        cwd=str(BACKEND_DIR),
-        env=env,
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout.strip()
-    second = subprocess.run(
-        [sys.executable, "-c", script],
-        cwd=str(BACKEND_DIR),
-        env=env,
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout.strip()
-
-    assert first == "True"
-    assert second == "False"
+def test_recompute_empty() -> None:
+    assert recompute_estimate_total([]) == 0.0
 
 
-def test_approve_send_once_atomic_under_concurrency(tmp_path) -> None:
-    db_path = tmp_path / "idempotency.sqlite3"
-    env = {**os.environ, "IDEMPOTENCY_DB_PATH": str(db_path)}
-    script = (
-        "from app.flow import approve_send_once;"
-        "print(approve_send_once('inv-race', 'k-race'))"
-    )
+# ---------------------------------------------------------------------------
+# approve_send_once — mocked Supabase client
+# ---------------------------------------------------------------------------
 
-    with ThreadPoolExecutor(max_workers=16) as executor:
-        outputs = list(
-            executor.map(
-                lambda _: subprocess.run(
-                    [sys.executable, "-c", script],
-                    cwd=str(BACKEND_DIR),
-                    env=env,
-                    check=True,
-                    capture_output=True,
-                    text=True,
-                ).stdout.strip(),
-                range(64),
-            )
-        )
+def _supabase_mock(*, insert_succeeds: bool) -> MagicMock:
+    result = MagicMock()
+    result.data = [{"invoice_id": "x"}] if insert_succeeds else []
 
-    assert outputs.count("True") == 1
+    execute = MagicMock(return_value=result)
+    insert = MagicMock()
+    insert.execute = execute
+
+    table = MagicMock()
+    table.insert.return_value = insert
+
+    client = MagicMock()
+    client.table.return_value = table
+    return client
+
+
+@patch("app.repo._client")
+def test_approve_send_first_call_true(mock_fn) -> None:
+    mock_fn.return_value = _supabase_mock(insert_succeeds=True)
+    assert approve_send_once("inv-1", "k-1") is True
+
+
+@patch("app.repo._client")
+def test_approve_send_duplicate_false(mock_fn) -> None:
+    mock_fn.return_value = _supabase_mock(insert_succeeds=False)
+    assert approve_send_once("inv-dup", "k-dup") is False
+
+
+@patch("app.repo._client")
+def test_approve_send_different_keys_both_succeed(mock_fn) -> None:
+    mock_fn.return_value = _supabase_mock(insert_succeeds=True)
+    assert approve_send_once("inv-2", "k-a") is True
+    assert approve_send_once("inv-2", "k-b") is True

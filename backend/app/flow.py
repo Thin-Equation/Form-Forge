@@ -1,29 +1,9 @@
-from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal
 
 from app.repo import reserve_idempotency_key
 
 
-@dataclass(frozen=True)
-class FlowState:
-    step: str = "lead"
-
-
-class FlowEngine:
-    def handle_prompt(self, state: FlowState, prompt: str) -> FlowState:
-        text = prompt.lower()
-
-        if "invoice" in text and state.step == "estimate":
-            return FlowState(step="invoice")
-        if "estimate" in text:
-            return FlowState(step="estimate")
-        if "lead" in text:
-            return FlowState(step="lead")
-
-        return state
-
-
-def recompute_estimate_total(items: list[dict[str, float]]) -> float:
+def recompute_estimate_total(items: list[dict]) -> float:
     total = sum(
         (Decimal(str(item["qty"])) * Decimal(str(item["rate"])) for item in items),
         start=Decimal("0"),
