@@ -188,7 +188,7 @@ cp .env.example .env
 #   SUPABASE_KEY=eyJ…service_role…
 
 uv sync                                   # install deps into .venv
-uv run uvicorn app.main:app --reload --port 8000
+uv run uvicorn app.main:app --reload --port 8000 --env-file .env
 ```
 
 Smoke test:
@@ -336,7 +336,7 @@ POST /actions/approve-send    HTTP/1.1 200
 | Frontend shows "Couldn't reach the backend"                      | FastAPI isn't running, or `NEXT_PUBLIC_BACKEND_URL` doesn't match. CORS is permissive (`*`) so that's not the issue. |
 | `/api/copilotkit/info` returns `a2uiEnabled: false`              | The `a2ui: {}` block is missing in `app/api/copilotkit/[[...path]]/route.ts`.                                       |
 | Chat hangs after "thinking"                                      | `GOOGLE_API_KEY` not set, key invalid, or quota exhausted. Check `aistudio.google.com/apikey`.                      |
-| `KeyError: SUPABASE_URL` from the backend                        | `backend/.env` not created or not loaded. `python-dotenv` reads it automatically when uvicorn runs from `backend/`. |
+| `KeyError: SUPABASE_URL` from the backend                        | `backend/.env` not loaded. Add `--env-file .env` to the uvicorn command (the env file isn't picked up automatically). |
 | Onboarding page never goes away                                  | You haven't run the `POST /company/{id}/onboard` curl from §6.2. Run it and reload.                                  |
 | `Module not found: …a2ui-renderer` after `npm install`           | Wipe `node_modules` and reinstall. OneDrive sync sometimes corrupts large dependency trees on Windows.              |
 | Dev server dies on env reload                                    | Known Next 16 quirk — restart with `npm run dev`. Code edits keep working via HMR; only env changes require a boot. |
