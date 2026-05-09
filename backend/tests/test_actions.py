@@ -16,6 +16,12 @@ def test_recompute_estimate_total() -> None:
     assert total == 1450
 
 
+def test_recompute_estimate_total_currency_precision() -> None:
+    total = recompute_estimate_total([{"qty": 3, "rate": 0.1}])
+
+    assert total == 0.3
+
+
 def test_approve_send_once_idempotency(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("IDEMPOTENCY_DB_PATH", str(tmp_path / "idempotency.sqlite3"))
 

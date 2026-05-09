@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from decimal import ROUND_HALF_UP, Decimal
 
 from app.repo import reserve_idempotency_key
 
@@ -23,7 +24,11 @@ class FlowEngine:
 
 
 def recompute_estimate_total(items: list[dict[str, float]]) -> float:
-    return sum(item["qty"] * item["rate"] for item in items)
+    total = sum(
+        (Decimal(str(item["qty"])) * Decimal(str(item["rate"])) for item in items),
+        start=Decimal("0"),
+    )
+    return float(total.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
 
 
 def approve_send_once(invoice_id: str, key: str) -> bool:
