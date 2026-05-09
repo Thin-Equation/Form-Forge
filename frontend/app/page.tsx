@@ -73,7 +73,7 @@ function Body() {
   return (
     <section className="flex-1 min-h-0">
       <AgentRuntime />
-      <CopilotChat threadId={`quote-to-cash:${companyId}`} />
+      <CopilotChat threadId={`quote-to-cash:${companyId}:v5`} />
     </section>
   );
 }
