@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from app.repo import SEEN_KEYS
+from app.repo import reserve_idempotency_key
 
 
 @dataclass(frozen=True)
@@ -27,8 +27,4 @@ def recompute_estimate_total(items: list[dict[str, float]]) -> float:
 
 
 def approve_send_once(invoice_id: str, key: str) -> bool:
-    seen_key = f"{invoice_id}:{key}"
-    if seen_key in SEEN_KEYS:
-        return False
-    SEEN_KEYS.add(seen_key)
-    return True
+    return reserve_idempotency_key(invoice_id=invoice_id, key=key)
