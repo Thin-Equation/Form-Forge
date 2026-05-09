@@ -6,6 +6,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import {
@@ -29,6 +30,7 @@ type CompanyState = {
   error: Error | null;
   setActiveWorkflowId: (id: string) => void;
   refreshFlow: () => Promise<void>;
+  refreshStatus: () => void;
 };
 
 const CompanyContext = createContext<CompanyState | null>(null);
@@ -41,16 +43,32 @@ export function CompanyProvider({
   children: React.ReactNode;
 }) {
   const [status, setStatus] = useState<OnboardingStatus | null>(null);
-  const [activeWorkflowId, setActiveWorkflowIdRaw] = useState<string | null>(
-    null
-  );
+  const [activeWorkflowId, setActiveWorkflowIdRaw] = useState<string | null>(null);
   const [workflow, setWorkflow] = useState<Workflow | null>(null);
   const [flow, setFlow] = useState<FlowStateResponse | null>(null);
   const [systemPrompt, setSystemPrompt] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
+  // tick triggers a re-fetch of company status without needing activeWorkflowId in deps
+  const [tick, setTick] = useState(0);
+  // ref so the status effect can read activeWorkflowId without a stale closure
+  const activeWorkflowIdRef = useRef(activeWorkflowId);
 
-  // Load status on mount; if onboarded, default the active workflow.
+  useEffect(() => {
+    activeWorkflowIdRef.current = activeWorkflowId;
+  }, [activeWorkflowId]);
+
+  const refreshStatus = useCallback(() => {
+    setActiveWorkflowIdRaw(null);
+    setStatus(null);
+    setWorkflow(null);
+    setFlow(null);
+    setSystemPrompt(null);
+    setError(null);
+    setTick((t: number) => t + 1);
+  }, []);
+
+  // Load company status. Re-runs when companyId or tick changes.
   useEffect(() => {
     let cancelled = false;
     setIsLoading(true);
@@ -59,7 +77,7 @@ export function CompanyProvider({
       .then((s) => {
         if (cancelled) return;
         setStatus(s);
-        if (s.is_onboarded && s.workflows.length > 0 && !activeWorkflowId) {
+        if (s.is_onboarded && s.workflows.length > 0 && !activeWorkflowIdRef.current) {
           setActiveWorkflowIdRaw(s.workflows[0].workflow_id);
         }
       })
@@ -74,9 +92,10 @@ export function CompanyProvider({
     return () => {
       cancelled = true;
     };
-  }, [companyId, activeWorkflowId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [companyId, tick]);
 
-  // Whenever activeWorkflowId changes (and we're onboarded), fetch workflow + flow + prompt in parallel.
+  // Whenever activeWorkflowId changes, fetch workflow + flow + prompt in parallel.
   useEffect(() => {
     if (!activeWorkflowId) return;
     let cancelled = false;
@@ -123,6 +142,7 @@ export function CompanyProvider({
       error,
       setActiveWorkflowId: setActiveWorkflowIdRaw,
       refreshFlow,
+      refreshStatus,
     }),
     [
       companyId,
@@ -134,6 +154,7 @@ export function CompanyProvider({
       isLoading,
       error,
       refreshFlow,
+      refreshStatus,
     ]
   );
 

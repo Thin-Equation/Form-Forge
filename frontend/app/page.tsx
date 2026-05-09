@@ -19,7 +19,7 @@ function Header() {
         <p className="text-sm text-zinc-500 dark:text-zinc-400">
           {onboarded
             ? "Ask the agent to pull a lead, draft an estimate, or generate an invoice."
-            : "This company has no workflow yet."}
+            : "Tell the agent about your process to set up your first workflow."}
         </p>
       </div>
       <div className="flex items-center gap-2 font-mono text-xs">
@@ -28,6 +28,11 @@ function Header() {
             step: {flow.step}
           </span>
         ) : null}
+        {!onboarded && (
+          <span className="rounded bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-200 px-2 py-0.5">
+            onboarding
+          </span>
+        )}
         <span className="rounded bg-zinc-200 dark:bg-zinc-800 px-2 py-0.5 text-zinc-600 dark:text-zinc-300">
           {companyId}
         </span>
@@ -37,7 +42,7 @@ function Header() {
 }
 
 function Body() {
-  const { companyId, status, isLoading, error, activeWorkflowId } = useCompany();
+  const { companyId, status, isLoading, error } = useCompany();
 
   if (error) {
     return (
@@ -64,34 +69,11 @@ function Body() {
     );
   }
 
-  if (status && !status.is_onboarded) {
-    return (
-      <div className="flex flex-1 items-center justify-center px-6">
-        <div className="max-w-md rounded-lg border border-zinc-300 dark:border-zinc-700 p-6 text-center">
-          <h2 className="text-base font-semibold">No workflow configured</h2>
-          <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-400">
-            <span className="font-mono">{companyId}</span> hasn&apos;t completed
-            onboarding. Create a workflow via{" "}
-            <code className="text-xs">POST /company/{companyId}/onboard</code>{" "}
-            and reload.
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  if (!activeWorkflowId) {
-    return (
-      <div className="flex flex-1 items-center justify-center text-sm text-zinc-500">
-        Selecting workflow…
-      </div>
-    );
-  }
-
+  // Always render the chat — the agent handles both onboarding and active flow.
   return (
     <section className="flex-1 min-h-0">
       <AgentRuntime />
-      <CopilotChat threadId={`quote-to-cash:${companyId}:${activeWorkflowId}`} />
+      <CopilotChat threadId={`quote-to-cash:${companyId}`} />
     </section>
   );
 }
