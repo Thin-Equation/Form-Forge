@@ -1,4 +1,4 @@
-# Quote-to-Cash — A2UI Sales Workflow Builder
+# Form Forge — A2UI Sales Workflow Builder
 
 > **Generative UI Global Hackathon — Track 1: Kill the Dashboard.**
 > A sales-ops agent that responds to user requests with editable forms it generates at runtime, instead of static dashboard pages.
