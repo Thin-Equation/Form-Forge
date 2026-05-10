@@ -1,7 +1,7 @@
-# Form Forge — A2UI Sales Workflow Builder
+# Form Forge — Generative Workflow UI
 
 > **Generative UI Global Hackathon — Track 1: Kill the Dashboard.**
-> A sales-ops agent that responds to user requests with editable forms it generates at runtime, instead of static dashboard pages.
+> A sales-ops agent that responds to user requests by mutating editable forms it generates at runtime, instead of static dashboard pages.
 
 ---
 
@@ -9,32 +9,32 @@
 
 Most sales tools ship a fixed set of forms — a Lead page, an Estimate page, an Invoice page — and the user clicks between them. **We deleted those pages.**
 
-Instead, every company configures a *workflow* (lead → estimate → invoice, or whatever shape they need), and a Gemini-backed agent generates the right editable form on demand. Ask "draft an estimate for ABC Corp" and you get a real, editable, line-item table — not a chat reply describing one. Edit a row, click Approve & Send, and the agent persists the change through your backend like any well-behaved CRUD system.
+Instead, every company configures a *workflow* (lead → estimate → invoice, or whatever shape they need), and a Gemini-backed agent generates the right editable form on demand. Ask "draft an estimate for ABC Corp" and you get a real, editable, line-item table — not a chat reply describing one. Edit a row directly in the table, and the change persists through the backend. Click **Approve & Send** and an idempotency-keyed invoice fires.
 
 **Why this couldn't be a chatbot:**
 
-- The agent emits actual interactive UI (forms with fields, tables, buttons), not text.
-- The form structure is generated at runtime from the workflow definition — no React component is hand-written for any specific company's lead form. A new company onboards a new workflow shape and the same agent renders forms it has never seen before.
-- Side-by-side, two engineers in different companies see *different* forms in the same chat surface, because the workflow they configured is different.
+- There is no chat thread visible to the user. The UI is a form — fields, tables, buttons — not a conversation log.
+- The form structure is generated at runtime from the workflow definition. No React component is hand-written for any specific company's lead form. A new company describes their process in plain English, the agent calls `onboard_company`, and the same `GenerativeForm` component renders fields it has never seen before.
+- Two companies with different workflow configs see *different* forms from the same codebase, because the fields Gemini invented for each are different.
 
 **Protocols / sponsors used:**
 
-- **A2UI** (Agent-to-UI) via the **CopilotKit** runtime — the agent emits A2UI surface trees that render as live React components.
-- **Gemini 2.5 Flash** as the LLM (claimed via the GCP hackathon credits).
-- **Supabase** for workflow + flow + submission storage.
+- **CopilotKit** AG-UI runtime — SSE agent loop, `useAgentContext`, `useFrontendTool`
+- **Gemini 2.5 Flash** as the LLM via `BuiltInAgent` (Google AI Studio)
+- **Supabase** for workflow + flow + submission storage
 
 ---
 
 ## 2. What you actually see in the demo
 
-1. Open `http://localhost:3000/?co=acme-co` — the page hydrates the company's onboarded workflow from the backend.
-2. Type "Pull up the ACME lead and draft an estimate." in the chat.
-3. Gemini calls `render_a2ui` with a Lead card, then a line-item Estimate form. Both render inline as interactive components, not text.
-4. Edit a line item's quantity. The agent calls our `update_estimate` frontend tool, which POSTs to the Python backend, recomputes the total in cents-clean Decimal math, persists, and returns the new props. The form refreshes with the new total.
-5. Type "Lock the contract and generate an invoice." Gemini renders an Invoice action card.
-6. Click **Approve & Send**. The agent calls `approve_send` with an idempotency key — the backend reserves the key, returns `sent: true`. Click again: `sent: false, message: "Duplicate request"`.
+1. Open `http://localhost:3000/?co=acme-co` — the page hydrates the company's workflow and current flow state from the backend. The **Lead Review** form renders immediately with editable fields.
+2. Type `"Pull up the ACME lead and draft an estimate"` in the command bar at the top.
+3. Gemini calls `lookup_record` (finds or creates the ACME lead), then `advance_step` to move to the estimate step — the **Draft Estimate** form replaces the lead form, line-item table included.
+4. Edit a line item's quantity directly in the table. On blur, `update_estimate` fires: the change POSTs to the Python backend, total is recomputed in cents-clean Decimal math, persisted, and the table refreshes with the new total.
+5. Click **Save & continue → Generate Invoice** (or type `"generate the invoice"`). The **Generate Invoice** form appears.
+6. Click **Approve & send invoice**. The backend reserves an idempotency key and returns `sent: true`. Click again: `sent: false, message: "Already sent"`.
 
-The same chat surface, three completely different rendered UIs, all generated by the agent at runtime.
+The same form surface, three completely different form shapes, all driven by the agent at runtime.
 
 ---
 
@@ -45,14 +45,20 @@ The same chat surface, three completely different rendered UIs, all generated by
 │  Browser                                                           │
 │                                                                    │
 │  ┌──────────────────────────────┐   ┌────────────────────────────┐ │
-│  │ <CopilotChat>                │   │ <CompanyProvider>          │ │
-│  │  ↳ A2UI auto-renderer        │   │  hydrates from /company,   │ │
-│  │  ↳ basicCatalog (Form,       │   │  /workflow, /flow on mount │ │
-│  │    TextInput, Button, Card…) │   └────────────────────────────┘ │
+│  │ <WorkflowSurface>            │   │ <CompanyProvider>          │ │
+│  │  ↳ <CommandBar>  (input)     │   │  hydrates from /company,   │ │
+│  │  ↳ <Stepper>     (nav)       │   │  /workflow, /flow on mount │ │
+│  │  ↳ <GenerativeForm> (fields) │   └────────────────────────────┘ │
+│  │  ↳ <LineItemsEditor> (table) │                                  │
+│  │  ↳ <ApproveSendButton>       │                                  │
 │  │                              │                                  │
-│  │ <AgentRuntime>               │                                  │
-│  │  ↳ useAgentContext × 4       │                                  │
+│  │ <AgentRuntime>  (no UI)      │                                  │
+│  │  ↳ useAgentContext × 5       │                                  │
 │  │  ↳ useFrontendTool:          │                                  │
+│  │     onboard_company          │                                  │
+│  │     advance_step             │                                  │
+│  │     save_submission          │                                  │
+│  │     lookup_record            │                                  │
 │  │     update_estimate          │                                  │
 │  │     approve_send             │                                  │
 │  └──────────────┬───────────────┘                                  │
@@ -65,47 +71,43 @@ The same chat surface, three completely different rendered UIs, all generated by
 │  ────────────────────────────────────────────────────────────── │
 │  CopilotRuntime (v2) with:                                      │
 │    • BuiltInAgent  → google/gemini-2.5-flash                    │
-│    • a2ui middleware → injects render_a2ui tool, parses events  │
-└─────────────────────────────────┬───────────────────────────────┘
-                                  │
-                                  ▼ Gemini 2.5 Flash
-                                    (Google AI Studio)
+│    • System prompt with tool-use rules (no render_a2ui)         │
+└─────────────────────────────┬───────────────────────────────────┘
+                              │
+                              ▼ Gemini 2.5 Flash
+                                (Google AI Studio)
 
-                  ┌──────────────────────────────────────┐
-                  │ FastAPI backend  :8000               │
-                  │ ──────────────────────────────────── │
-                  │ /company/{id}/status     ← FE on load │
-                  │ /workflow/{id}/{wf}      ← onboarding │
-                  │ /flow/{id}/{wf}          ← state      │
-                  │ /actions/estimate-update ← line edits │
-                  │ /actions/approve-send    ← approvals  │
-                  │ /submissions/...         ← history    │
-                  └──────────────────────────────────────┘
-                                  │
-                                  ▼
-                  ┌──────────────────────────────────────┐
-                  │ Supabase (Postgres)                  │
-                  │   company_workflows                  │
-                  │   company_flows                      │
-                  │   form_submissions                   │
-                  │   idempotency_keys                   │
-                  └──────────────────────────────────────┘
+              ┌──────────────────────────────────────┐
+              │ FastAPI backend  :8000               │
+              │ ──────────────────────────────────── │
+              │ /company/{id}/status     ← FE on load │
+              │ /company/{id}/onboard    ← first setup │
+              │ /workflow/{id}/{wf}      ← definition  │
+              │ /flow/{id}/{wf}          ← step state  │
+              │ /actions/estimate-update ← line edits  │
+              │ /actions/approve-send    ← approvals   │
+              │ /submissions/...         ← history     │
+              └──────────────────────────────────────┘
+                              │
+                              ▼
+              ┌──────────────────────────────────────┐
+              │ Supabase (Postgres)                  │
+              │   company_workflows                  │
+              │   company_flows                      │
+              │   form_submissions                   │
+              │   idempotency_keys                   │
+              └──────────────────────────────────────┘
 ```
 
 ### How a single user prompt flows end-to-end
 
-1. **User types** in `<CopilotChat>`.
-2. The provider opens an SSE connection to `/api/copilotkit` (Next.js API route).
-3. The Next runtime calls Gemini through `BuiltInAgent`, with three things merged into Gemini's context:
-   - The system prompt the workflow generates (`Workflow.to_system_prompt()` server-side).
-   - The current `FlowStateResponse` (step, component, props, quote_id).
-   - The full `Workflow` JSON (steps + fields).
-4. Gemini calls the `render_a2ui` tool with a surface tree.
-5. The A2UI middleware streams the surface, the `<CopilotKit>` provider auto-mounts an A2UI message renderer, the `basicCatalog` turns the tree into real React.
-6. User interacts → either a normal LLM turn, or one of our two frontend tools fires:
-   - `update_estimate` → `POST /actions/estimate-update` → Supabase upsert → returns recomputed props.
-   - `approve_send` → `POST /actions/approve-send` → idempotency-keyed reserve → returns `sent` boolean.
-7. After a tool call, `refreshFlow()` re-fetches `/flow/{co}/{wf}` so Gemini sees the new state on the next turn.
+1. **User types** in `<CommandBar>`. The input is never disabled — you can compose the next message while the agent is running.
+2. `CommandBar` adds the message to the agent and calls `copilotkit.runAgent()`, which opens an SSE connection to `/api/copilotkit`.
+3. The Next.js runtime calls Gemini through `BuiltInAgent`, injecting five agent context values: `company_id`, `is_onboarded`, workflow JSON, system prompt, and current flow state.
+4. Gemini calls one of the six frontend tools (e.g. `lookup_record`, then `advance_step`).
+5. The tool handler runs in the browser: it calls the Python REST API, awaits the response, then calls `refreshFlow()`.
+6. `refreshFlow()` re-fetches `/flow/{co}/{wf}` → `CompanyProvider` updates → `GenerativeForm` re-renders with the new step and props.
+7. Gemini replies with at most one sentence of plain text, shown as a muted italic line below the input.
 
 ---
 
@@ -116,12 +118,18 @@ The same chat surface, three completely different rendered UIs, all generated by
 ├── README.md                      ← you are here
 ├── frontend/                      ← Next.js 16 + TypeScript + Tailwind v4
 │   ├── app/
-│   │   ├── api/copilotkit/[[...path]]/route.ts   ← CopilotKit runtime, Gemini, A2UI
-│   │   ├── layout.tsx
-│   │   ├── page.tsx               ← hydration + chat surface
+│   │   ├── api/copilotkit/[[...path]]/route.ts   ← CopilotKit runtime + Gemini
+│   │   ├── layout.tsx             ← glassmorphism background + metadata
+│   │   ├── page.tsx               ← Header, CompanyProvider, WorkflowSurface
 │   │   └── providers.tsx          ← <CopilotKit> provider
 │   ├── components/
-│   │   └── AgentRuntime.tsx       ← useAgentContext + useFrontendTool registrations
+│   │   ├── AgentRuntime.tsx       ← useAgentContext + all useFrontendTool registrations
+│   │   ├── WorkflowSurface.tsx    ← top-level layout (CommandBar + Stepper + form)
+│   │   ├── CommandBar.tsx         ← command input, suggestions, agent reply line
+│   │   ├── Stepper.tsx            ← clickable step navigation
+│   │   ├── GenerativeForm.tsx     ← renders workflow fields from flow state
+│   │   ├── LineItemsEditor.tsx    ← editable line-item table for estimate step
+│   │   └── ApproveSendButton.tsx  ← idempotent invoice send button
 │   ├── lib/
 │   │   ├── api.ts                 ← typed REST client (mirrors backend/app/schemas.py)
 │   │   └── CompanyContext.tsx     ← mount-time hydration + React context
@@ -148,14 +156,14 @@ The same chat surface, three completely different rendered UIs, all generated by
 
 ## 5. Tech stack
 
-| Layer       | Tech                                                                              |
-| ----------- | --------------------------------------------------------------------------------- |
-| Frontend    | Next.js 16 (App Router, Turbopack), React 19.2, TypeScript, Tailwind v4           |
-| Agent runtime | `@copilotkit/runtime` v1.57 (v2 entry), `@copilotkit/react-core` v2, `@ag-ui/client`, `@copilotkit/a2ui-renderer` (basicCatalog) |
-| LLM         | Google Gemini 2.5 Flash via `BuiltInAgent` (Vercel AI SDK adapter under the hood) |
-| Backend     | FastAPI, Pydantic v2, Python 3.12+, [`uv`](https://docs.astral.sh/uv/) for deps   |
-| Database    | Supabase (Postgres + RLS)                                                         |
-| Tests       | Vitest + React Testing Library (frontend), pytest + httpx (backend)               |
+| Layer          | Tech                                                                              |
+| -------------- | --------------------------------------------------------------------------------- |
+| Frontend       | Next.js 16 (App Router, Turbopack), React 19.2, TypeScript, Tailwind v4           |
+| Agent runtime  | `@copilotkit/runtime` v1.57 (v2 entry), `@copilotkit/react-core` v2, `@ag-ui/client` |
+| LLM            | Google Gemini 2.5 Flash via `BuiltInAgent` (Google AI Studio)                     |
+| Backend        | FastAPI, Pydantic v2, Python 3.12+, [`uv`](https://docs.astral.sh/uv/) for deps   |
+| Database       | Supabase (Postgres + RLS)                                                         |
+| Tests          | Vitest + React Testing Library (frontend), pytest + httpx (backend)               |
 
 ---
 
@@ -174,7 +182,7 @@ You'll set up three things in order: **Supabase**, **backend**, **frontend**.
    - **Project URL** (e.g. `https://abcdefg.supabase.co`)
    - **service_role secret** (starts with `eyJ…`, never expose to the browser)
 
-> Migrations are idempotent — safe to re-run. Migration 003 drops and recreates the workflow + flow tables; data from 001/002 is wiped, which is fine for a fresh hackathon checkout.
+> Migrations are idempotent — safe to re-run. Migration 003 drops and recreates the workflow + flow tables; data from 001/002 is wiped, which is fine for a fresh checkout.
 
 ### 6.2 Backend (FastAPI)
 
@@ -229,7 +237,7 @@ npm run dev
 
 Open <http://localhost:3000/?co=acme-co> in your browser.
 
-If `acme-co` is onboarded (you ran the seed step above), the chat surface appears. If not, you'll see a friendly "No workflow configured" panel telling you exactly which curl to run.
+If `acme-co` is onboarded (you ran the seed step above), the Lead Review form renders immediately. If not, you'll see a "No workflow yet" panel — type a description of your process in the command bar and the agent will build the workflow for you.
 
 Run the frontend test suite + typecheck:
 
@@ -240,35 +248,35 @@ npx tsc --noEmit        # type check the project
 
 ### 6.4 Env-var quick reference
 
-| Variable                  | Where           | Required | Notes                                          |
-| ------------------------- | --------------- | -------- | ---------------------------------------------- |
-| `SUPABASE_URL`            | `backend/.env`  | yes      | Project URL                                    |
-| `SUPABASE_KEY`            | `backend/.env`  | yes      | service_role key — server only                 |
-| `GOOGLE_API_KEY`          | `frontend/.env.local` | yes | AI Studio key, read by `BuiltInAgent` at runtime |
-| `NEXT_PUBLIC_BACKEND_URL` | `frontend/.env.local` | no  | Defaults to `http://localhost:8000`            |
+| Variable                  | Where                 | Required | Notes                                            |
+| ------------------------- | --------------------- | -------- | ------------------------------------------------ |
+| `SUPABASE_URL`            | `backend/.env`        | yes      | Project URL                                      |
+| `SUPABASE_KEY`            | `backend/.env`        | yes      | service_role key — server only                   |
+| `GOOGLE_API_KEY`          | `frontend/.env.local` | yes      | AI Studio key, read by `BuiltInAgent` at runtime |
+| `NEXT_PUBLIC_BACKEND_URL` | `frontend/.env.local` | no       | Defaults to `http://localhost:8000`              |
 
 ---
 
 ## 7. API reference
 
-| Method | Path                                                  | Purpose                                                                |
-| ------ | ----------------------------------------------------- | ---------------------------------------------------------------------- |
-| GET    | `/company/{company_id}/status`                        | Onboarding gate. Called on every page load.                            |
-| POST   | `/company/{company_id}/onboard`                       | Save the first workflow + initialise its flow.                         |
-| GET    | `/workflow/{company_id}`                              | List all workflows configured for the company.                         |
-| POST   | `/workflow/{company_id}`                              | Create a new workflow (409 if `workflow_id` already exists).           |
-| GET    | `/workflow/{company_id}/{workflow_id}`                | Fetch one workflow.                                                    |
-| PUT    | `/workflow/{company_id}/{workflow_id}`                | Full replace.                                                          |
-| DELETE | `/workflow/{company_id}/{workflow_id}`                | Remove workflow + its flow state.                                      |
-| GET    | `/workflow/{company_id}/{workflow_id}/system-prompt`  | LLM context string built from the workflow definition.                 |
-| GET    | `/flow/{company_id}/{workflow_id}`                    | Current step + component + props + quote_id.                           |
-| POST   | `/flow/{company_id}/{workflow_id}`                    | Upsert flow state (full replace of the row).                           |
-| PATCH  | `/flow/{company_id}/{workflow_id}`                    | Merge-patch only the keys you provide; preserves other props.          |
-| POST   | `/submissions/{company_id}/{workflow_id}`             | Persist a completed step's form data (immutable record).               |
+| Method | Path                                                  | Purpose                                                                  |
+| ------ | ----------------------------------------------------- | ------------------------------------------------------------------------ |
+| GET    | `/company/{company_id}/status`                        | Onboarding gate. Called on every page load.                              |
+| POST   | `/company/{company_id}/onboard`                       | Save the first workflow + initialise its flow.                           |
+| GET    | `/workflow/{company_id}`                              | List all workflows configured for the company.                           |
+| POST   | `/workflow/{company_id}`                              | Create a new workflow (409 if `workflow_id` already exists).             |
+| GET    | `/workflow/{company_id}/{workflow_id}`                | Fetch one workflow.                                                      |
+| PUT    | `/workflow/{company_id}/{workflow_id}`                | Full replace.                                                            |
+| DELETE | `/workflow/{company_id}/{workflow_id}`                | Remove workflow + its flow state.                                        |
+| GET    | `/workflow/{company_id}/{workflow_id}/system-prompt`  | LLM context string built from the workflow definition.                   |
+| GET    | `/flow/{company_id}/{workflow_id}`                    | Current step + component + props + quote_id.                             |
+| POST   | `/flow/{company_id}/{workflow_id}`                    | Upsert flow state (full replace of the row).                             |
+| PATCH  | `/flow/{company_id}/{workflow_id}`                    | Merge-patch only the keys you provide; preserves other props.            |
+| POST   | `/submissions/{company_id}/{workflow_id}`             | Persist a completed step's form data (immutable record).                 |
 | GET    | `/submissions/{company_id}/{workflow_id}`             | List submissions newest-first; supports `?step=`, `?search=`, `?limit=`. |
-| GET    | `/submissions/{company_id}/{workflow_id}/lookup`      | Find the most recent submission matching `?step=&search=`.             |
-| POST   | `/actions/estimate-update`                            | Recompute total + persist line items. Called by `update_estimate` tool. |
-| POST   | `/actions/approve-send`                               | Idempotent invoice send. Called by `approve_send` tool.                |
+| GET    | `/submissions/{company_id}/{workflow_id}/lookup`      | Find the most recent submission matching `?step=&search=`.               |
+| POST   | `/actions/estimate-update`                            | Recompute total + persist line items. Called by `update_estimate` tool.  |
+| POST   | `/actions/approve-send`                               | Idempotent invoice send. Called by `approve_send` tool.                  |
 
 Full Pydantic schemas live in `backend/app/schemas.py`; the TypeScript mirror is `frontend/lib/api.ts`.
 
@@ -278,22 +286,23 @@ Full Pydantic schemas live in `backend/app/schemas.py`; the TypeScript mirror is
 
 The mental model: **CopilotKit is the LLM-side runtime, the Python backend is the data-side runtime, and they don't talk to each other.** The frontend bridges them.
 
-| Concern                          | Owned by                           |
-| -------------------------------- | ---------------------------------- |
-| Chat input + LLM call            | CopilotKit runtime in Next.js → Gemini |
-| Generative UI rendering          | A2UI middleware + `basicCatalog` (auto-mounted) |
-| Workflow config / flow state / submissions | Python FastAPI + Supabase  |
-| User actions (line edit, approve) | Frontend tools call Python REST    |
+| Concern                                     | Owned by                                    |
+| ------------------------------------------- | ------------------------------------------- |
+| Command input + LLM call                    | `CommandBar` → CopilotKit runtime → Gemini  |
+| Form rendering                              | `GenerativeForm` reads `workflow` + `flow` from context |
+| Workflow config / flow state / submissions  | Python FastAPI + Supabase                   |
+| User actions (field edit, line item, approve) | Field blur / button click → Python REST   |
+| Agent actions (advance step, lookup, send)  | `AgentRuntime` frontend tools → Python REST |
 
-What this means for engineers reading the code:
+Key separation:
 
 - The Python backend doesn't know Gemini exists. It's a plain CRUD API.
-- Gemini doesn't know Supabase exists. It sees a system prompt + flow JSON via `useAgentContext`, and two function tools (`update_estimate`, `approve_send`).
-- The frontend is the integration layer. `lib/CompanyContext.tsx` does the hydration; `components/AgentRuntime.tsx` glues Gemini's tools to REST calls.
+- Gemini doesn't know Supabase exists. It sees a system prompt + flow JSON via `useAgentContext`, and six frontend tools it can call.
+- The frontend is the integration layer. `lib/CompanyContext.tsx` does the hydration; `components/AgentRuntime.tsx` registers all tools and glues them to REST calls.
 
 If you want to add a new action (say, `revert_to_step`), you write it in three places:
 
-1. Add the REST endpoint in `backend/app/main.py` + the request/response models in `schemas.py`.
+1. Add the REST endpoint in `backend/app/main.py` + request/response models in `schemas.py`.
 2. Add a typed wrapper in `frontend/lib/api.ts`.
 3. Register it via `useFrontendTool` in `components/AgentRuntime.tsx` with a Zod parameters schema and a handler that calls #2 and `refreshFlow()`.
 
@@ -304,20 +313,24 @@ If you want to add a new action (say, `revert_to_step`), you write it in three p
 After both servers are running and `acme-co` is onboarded, the happy path:
 
 ```text
-You: pull up the ACME lead and draft an estimate
-Agent: [renders LeadCard surface]
-Agent: [renders EditableEstimate surface with default line items]
+Open: http://localhost:3000/?co=acme-co
+→ Lead Review form renders with empty fields (step: lead)
 
-You: change the labor quantity to 12
-Agent: [calls update_estimate, recomputed total streams back]
-Agent: [renders refreshed EditableEstimate]
+Type: "pull up the ACME lead and draft an estimate"
+→ Agent calls lookup_record (step=lead, customer=acme)
+→ Agent calls advance_step → Lead Review fields populate
+→ Step advances to Draft Estimate, line-item table appears
 
-You: lock the contract and generate the invoice
-Agent: [renders InvoiceAction surface]
+Edit a line item qty directly in the table
+→ update_estimate fires on blur → total recomputes → table refreshes
 
-[Click Approve & Send]
-Agent: [calls approve_send → sent: true]
-Agent: [renders confirmation]
+Click "Save & continue → Generate Invoice"  (or type "generate the invoice")
+→ Generate Invoice form appears with invoice fields
+
+Click "Approve & send invoice"
+→ approve_send fires → sent: true
+Click again
+→ sent: false, message: "Already sent"  (idempotency key reuse)
 ```
 
 The two REST actions show up in the FastAPI log:
@@ -327,19 +340,29 @@ POST /actions/estimate-update HTTP/1.1 200
 POST /actions/approve-send    HTTP/1.1 200
 ```
 
+**Testing the onboarding flow** (fresh company):
+
+```text
+Open: http://localhost:3000/?co=fresh-brand
+→ "No workflow yet" glass card shown
+
+Type: "Set up a 3-step SaaS workflow: prospect intake, pricing proposal, contract sign-off"
+→ Agent calls onboard_company with Gemini-invented fields for each step
+→ Workflow saved to Supabase → form appears with the new step structure
+```
+
 ---
 
 ## 10. Troubleshooting
 
-| Symptom                                                          | Likely cause / fix                                                                                                  |
-| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| Frontend shows "Couldn't reach the backend"                      | FastAPI isn't running, or `NEXT_PUBLIC_BACKEND_URL` doesn't match. CORS is permissive (`*`) so that's not the issue. |
-| `/api/copilotkit/info` returns `a2uiEnabled: false`              | The `a2ui: {}` block is missing in `app/api/copilotkit/[[...path]]/route.ts`.                                       |
-| Chat hangs after "thinking"                                      | `GOOGLE_API_KEY` not set, key invalid, or quota exhausted. Check `aistudio.google.com/apikey`.                      |
-| `KeyError: SUPABASE_URL` from the backend                        | `backend/.env` not loaded. Add `--env-file .env` to the uvicorn command (the env file isn't picked up automatically). |
-| Onboarding page never goes away                                  | You haven't run the `POST /company/{id}/onboard` curl from §6.2. Run it and reload.                                  |
-| `Module not found: …a2ui-renderer` after `npm install`           | Wipe `node_modules` and reinstall. OneDrive sync sometimes corrupts large dependency trees on Windows.              |
-| Dev server dies on env reload                                    | Known Next 16 quirk — restart with `npm run dev`. Code edits keep working via HMR; only env changes require a boot. |
+| Symptom                                             | Likely cause / fix                                                                                                      |
+| --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| Frontend shows "Couldn't reach the backend"         | FastAPI isn't running, or `NEXT_PUBLIC_BACKEND_URL` doesn't match. CORS is permissive (`*`) so that's not the issue.    |
+| Command bar shows "Thinking…" but nothing happens   | `GOOGLE_API_KEY` not set, key invalid, or quota exhausted. Check `aistudio.google.com/apikey`.                          |
+| "No workflow yet" never goes away after describing process | Agent didn't call `onboard_company` — try being more explicit: *"Create a workflow called X with steps Y and Z"*. |
+| Form fields don't save on blur                      | Backend not reachable, or `activeWorkflowId` is null (check the step badge in the header).                              |
+| `KeyError: SUPABASE_URL` from the backend           | `backend/.env` not loaded. Add `--env-file .env` to the uvicorn command.                                                |
+| Dev server dies on env reload                       | Known Next 16 quirk — restart with `npm run dev`. Code edits keep working via HMR; only env changes require a boot.    |
 
 ---
 
@@ -348,14 +371,13 @@ POST /actions/approve-send    HTTP/1.1 200
 - Authentication. Every request is implicitly the service role.
 - Multi-user concurrency on the same flow row (last write wins).
 - Real email/payment integration for `approve_send` — it just reserves an idempotency key and returns `sent: true`.
-- A workflow editor UI. Workflows are seeded via curl for now; a future iteration would render an `A2UI`-driven form-builder for the same agent.
-- Per-company catalog overrides for A2UI components — the demo uses CopilotKit's default `basicCatalog`.
+- A visual workflow editor. Workflows are created by describing them to the agent; a future iteration would render a form-builder using the same `GenerativeForm` component.
 
 ---
 
 ## 12. Credits
 
-- **CopilotKit** for the AG-UI / A2UI runtime stack.
+- **CopilotKit** for the AG-UI runtime stack.
 - **Google Gemini** for the LLM.
 - **Supabase** for free Postgres + RLS.
 - **AI Tinkerers** for organising the Generative UI Global Hackathon.
