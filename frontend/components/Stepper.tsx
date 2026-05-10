@@ -31,7 +31,7 @@ export function Stepper() {
   return (
     <nav
       aria-label="Workflow steps"
-      className="border-b border-zinc-200 dark:border-zinc-800 px-6 py-3 bg-zinc-50/60 dark:bg-zinc-950/60"
+      className="border-b border-white/10 backdrop-blur-xl bg-white/[0.03] px-6 py-3"
     >
       <ol className="flex flex-wrap items-center gap-1.5 text-xs">
         {workflow.steps.map((step, i) => {
@@ -45,28 +45,23 @@ export function Stepper() {
                 onClick={() => goto(step.id, step.component)}
                 disabled={isCurrent || isLoading}
                 className={
-                  "rounded-full px-3 py-1 font-medium transition " +
+                  "rounded-full px-3 py-1 font-medium transition-all " +
                   (isCurrent
-                    ? "bg-emerald-600 text-white"
+                    ? "bg-emerald-500/80 text-white shadow-lg shadow-emerald-500/25 border border-emerald-400/40"
                     : isPast
-                      ? "bg-emerald-100 text-emerald-800 hover:bg-emerald-200 dark:bg-emerald-900/40 dark:text-emerald-200 dark:hover:bg-emerald-900/60"
-                      : "bg-zinc-200 text-zinc-700 hover:bg-zinc-300 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700") +
+                      ? "bg-white/10 text-emerald-300 border border-emerald-500/25 hover:bg-white/15"
+                      : "bg-white/5 text-white/40 border border-white/10 hover:bg-white/10 hover:text-white/60") +
                   (isCurrent ? " cursor-default" : " cursor-pointer") +
                   (isLoading ? " opacity-60" : "")
                 }
               >
-                <span className="mr-1.5 inline-flex h-4 w-4 items-center justify-center rounded-full bg-white/30 text-[10px]">
+                <span className="mr-1.5 inline-flex h-4 w-4 items-center justify-center rounded-full bg-white/20 text-[10px]">
                   {i + 1}
                 </span>
                 {step.name}
               </button>
               {i < workflow.steps.length - 1 && (
-                <span
-                  aria-hidden
-                  className="text-zinc-400 dark:text-zinc-600 select-none"
-                >
-                  →
-                </span>
+                <span aria-hidden className="text-white/20 select-none">→</span>
               )}
             </li>
           );

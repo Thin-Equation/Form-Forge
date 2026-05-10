@@ -13,7 +13,6 @@ export function WorkflowSurface() {
 
   return (
     <div className="flex flex-1 flex-col min-h-0">
-      {/* Mounts agent context + frontend tools (no UI). */}
       <AgentRuntime />
 
       <CommandBar />
@@ -22,7 +21,7 @@ export function WorkflowSurface() {
       <div className="flex-1 min-h-0 overflow-auto px-6 py-6">
         <div className="mx-auto max-w-3xl space-y-4">
           {typeof notice === "string" && notice.trim() && (
-            <div className="rounded-md border border-amber-200 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-900 px-4 py-2 text-xs text-amber-900 dark:text-amber-200">
+            <div className="rounded-xl backdrop-blur-xl bg-amber-500/10 border border-amber-500/20 px-4 py-2 text-xs text-amber-200">
               <span className="font-semibold">Agent note: </span>
               {notice}
             </div>
@@ -33,9 +32,9 @@ export function WorkflowSurface() {
           ) : workflow ? (
             <GenerativeForm />
           ) : isLoading ? (
-            <div className="text-sm text-zinc-500">Loading workflow…</div>
+            <div className="text-sm text-white/40">Loading workflow…</div>
           ) : (
-            <div className="text-sm text-zinc-500">No active workflow.</div>
+            <div className="text-sm text-white/40">No active workflow.</div>
           )}
         </div>
       </div>
@@ -45,18 +44,18 @@ export function WorkflowSurface() {
 
 function OnboardingPrompt() {
   return (
-    <div className="rounded-xl border border-dashed border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900/40 p-8 text-center">
-      <h2 className="text-lg font-semibold tracking-tight">
+    <div className="rounded-2xl backdrop-blur-xl bg-white/5 border border-white/10 shadow-2xl p-8 text-center">
+      <h2 className="text-lg font-semibold tracking-tight text-white">
         No workflow yet
       </h2>
-      <p className="mt-1.5 text-sm text-zinc-500 dark:text-zinc-400 max-w-md mx-auto">
+      <p className="mt-1.5 text-sm text-white/50 max-w-md mx-auto">
         Use the bar above to describe your sales process. The agent will
         generate the steps and forms — you can edit each form inline once
         it&apos;s built.
       </p>
-      <p className="mt-4 text-xs text-zinc-400 dark:text-zinc-500">
+      <p className="mt-4 text-xs text-white/30">
         Try:&nbsp;
-        <code className="px-1.5 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800">
+        <code className="px-1.5 py-0.5 rounded-md bg-white/10 text-white/50">
           Set up a quote-to-cash workflow with lead, estimate, and invoice steps.
         </code>
       </p>
